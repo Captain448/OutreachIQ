@@ -1,0 +1,134 @@
+# =============================================================================
+# OutReachIQ — Comprehensive Git Exclusions for Safe GitHub Publishing
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Environment Secrets & Local Overrides
+# -----------------------------------------------------------------------------
+.env
+.env.*
+*.env
+!.env.example
+
+# -----------------------------------------------------------------------------
+# 2. Python Environments, Bytecode & Build Artifacts
+# -----------------------------------------------------------------------------
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+backend/.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing & Coverage
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+nosetests.xml
+coverage.xml
+
+# -----------------------------------------------------------------------------
+# 3. Databases, SQLite Journals & Backups (Preserve existing local data)
+# -----------------------------------------------------------------------------
+*.db
+*.db.*
+*.db-*
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.bak
+*.backup
+*.dump
+*.sql
+
+# Explicit local database instances and snapshots
+backend/outreachiq.db
+backend/outreachiq.db.*
+backend/outreachiq.db-*
+backend/outreachiq.db.phase8_baseline.bak
+backend/backups/
+backups/
+
+# -----------------------------------------------------------------------------
+# 4. Private User Data, Resumes & Document Uploads
+# -----------------------------------------------------------------------------
+backend/uploads/
+uploads/
+*.pdf
+*.docx
+
+# -----------------------------------------------------------------------------
+# 5. Local Logs, Diagnostics & Temporary Scripts
+# -----------------------------------------------------------------------------
+*.log
+logs/
+backend/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+scratch/
+backend/scratch/
+
+# -----------------------------------------------------------------------------
+# 6. Audit Reports & Internal Pre-Publication Documentation
+# -----------------------------------------------------------------------------
+OUTREACHIQ_COMPLETE_PROJECT_AUDIT.md
+OUTREACHIQ_API_READINESS_REPORT.md
+OUTREACHIQ_PRE_GITHUB_READINESS_REPORT.md
+*AUDIT*.md
+*READINESS*.md
+*audit*.md
+*readiness*.md
+*report*.md
+!README.md
+!frontend/README.md
+
+# -----------------------------------------------------------------------------
+# 7. Frontend, Node & Angular Build Artifacts
+# -----------------------------------------------------------------------------
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.angular/
+frontend/.angular/
+.vite/
+frontend/.vite/
+*.tsbuildinfo
+
+# -----------------------------------------------------------------------------
+# 8. IDE, Editor & Operating System Metadata
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,46 @@
+<ng-container *ngIf="authService.token$ | async; else publicLayout">
+  <div class="app-layout">
+    <!-- Mobile top bar for screens under 768px -->
+    <header class="mobile-topbar">
+      <button class="mobile-menu-btn" (click)="toggleMobileNav()" aria-label="Toggle navigation menu">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+
+      <div class="mobile-brand">
+        <div class="brand-badge-mini">IQ</div>
+        <span class="mobile-brand-title">OutReachIQ</span>
+      </div>
+
+      <div class="mobile-user" *ngIf="authService.currentUser$ | async as user">
+        <div class="user-avatar-mini">{{ (user.full_name || user.email).charAt(0).toUpperCase() }}</div>
+      </div>
+    </header>
+
+    <!-- Overlay backdrop for mobile drawer -->
+    <div
+      class="mobile-backdrop"
+      *ngIf="mobileNavOpen"
+      (click)="closeMobileNav()"
+      aria-hidden="true"
+    ></div>
+
+    <app-sidebar
+      [class.mobile-open]="mobileNavOpen"
+      (navItemClicked)="closeMobileNav()"
+    ></app-sidebar>
+
+    <main class="main-content" (click)="mobileNavOpen && closeMobileNav()">
+      <router-outlet></router-outlet>
+    </main>
+  </div>
+</ng-container>
+
+<ng-template #publicLayout>
+  <div class="public-layout">
+    <router-outlet></router-outlet>
+  </div>
+</ng-template>
