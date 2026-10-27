@@ -1,0 +1,46 @@
+budget_hours,method,selected_skills,hours_consumed,final_coverage_pct,marginal_gain_pp,budget_compliant,prerequisite_compliant,gain_per_hour,qualifying_opps
+0,COSGO,None,0,22.51,0.0,True,True,0.0,0
+0,Frequency-Ranked,None,0.0,22.51,0.0,True,True,0.0,0
+0,Independent Per-Job,None,0.0,22.51,0.0,True,True,0.0,0
+0,Greedy Frequency (No-Effort),None,0.0,22.51,0.0,True,True,0.0,0
+0,Exact Oracle,None,0.0,22.51,0.0,True,True,0.0,0
+5,COSGO,None,0,22.51,0.0,True,True,0.0,0
+5,Frequency-Ranked,None,0.0,22.51,0.0,True,True,0.0,0
+5,Independent Per-Job,None,0.0,22.51,0.0,True,True,0.0,0
+5,Greedy Frequency (No-Effort),None,0.0,22.51,0.0,True,True,0.0,0
+5,Exact Oracle,None,0.0,22.51,0.0,True,True,0.0,0
+10,COSGO,Docker,9.8,45.02,22.51,True,True,0.02297,0
+10,Frequency-Ranked,Docker,9.8,45.02,22.51,True,True,0.02297,0
+10,Independent Per-Job,Docker,9.8,45.02,22.51,True,True,0.02297,0
+10,Greedy Frequency (No-Effort),Docker,9.8,45.02,22.51,True,True,0.02297,0
+10,Exact Oracle,Docker,9.8,45.02,22.51,True,True,0.02297,0
+15,COSGO,Docker,9.8,45.02,22.51,True,True,0.02297,0
+15,Frequency-Ranked,Docker,9.8,45.02,22.51,True,True,0.02297,0
+15,Independent Per-Job,Docker,9.8,45.02,22.51,True,True,0.02297,0
+15,Greedy Frequency (No-Effort),Docker,9.8,45.02,22.51,True,True,0.02297,0
+15,Exact Oracle,Docker,9.8,45.02,22.51,True,True,0.02297,0
+20,COSGO,Docker,9.8,45.02,22.51,True,True,0.02297,0
+20,Frequency-Ranked,Docker,9.8,45.02,22.51,True,True,0.02297,0
+20,Independent Per-Job,Docker,9.8,45.02,22.51,True,True,0.02297,0
+20,Greedy Frequency (No-Effort),Docker,9.8,45.02,22.51,True,True,0.02297,0
+20,Exact Oracle,Docker,9.8,45.02,22.51,True,True,0.02297,0
+25,COSGO,Docker;Scikit-Learn,23.8,50.68,28.17,True,True,0.01183,1
+25,Frequency-Ranked,Docker;Scikit-Learn,23.8,50.68,28.17,True,True,0.01183,1
+25,Independent Per-Job,Docker;Scikit-Learn,23.8,50.68,28.17,True,True,0.01183,1
+25,Greedy Frequency (No-Effort),Docker;Scikit-Learn,23.8,50.68,28.17,True,True,0.01183,1
+25,Exact Oracle,Docker;Scikit-Learn,23.8,50.68,28.17,True,True,0.01183,1
+30,COSGO,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+30,Frequency-Ranked,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+30,Independent Per-Job,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+30,Greedy Frequency (No-Effort),Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+30,Exact Oracle,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+35,COSGO,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+35,Frequency-Ranked,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+35,Independent Per-Job,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+35,Greedy Frequency (No-Effort),Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+35,Exact Oracle,Docker;FastAPI,25.8,56.29,33.77,True,True,0.01309,2
+40,COSGO,Docker;FastAPI;Scikit-Learn,39.8,61.94,39.43,True,True,0.00991,3
+40,Frequency-Ranked,Docker;FastAPI;Scikit-Learn,39.8,61.94,39.43,True,True,0.00991,3
+40,Independent Per-Job,Docker;FastAPI;Scikit-Learn,39.8,61.94,39.43,True,True,0.00991,3
+40,Greedy Frequency (No-Effort),Docker;FastAPI;Scikit-Learn,39.8,61.94,39.43,True,True,0.00991,3
+40,Exact Oracle,Docker;FastAPI;Scikit-Learn,39.8,61.94,39.43,True,True,0.00991,3
