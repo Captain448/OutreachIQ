@@ -8,14 +8,12 @@ from app.services.providers.base_provider import BaseProvider, NormalizedJob, No
 
 
 class AdzunaAdapter(BaseProvider):
-    def __init__(self, app_id: Optional[str] = None, app_key: Optional[str] = None):
+    def __init__(self, app_id: Optional[str] = None, app_key: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
         self.app_id = app_id or settings.ADZUNA_APP_ID
         self.app_key = app_key or settings.ADZUNA_APP_KEY
         self.endpoint = "https://api.adzuna.com/v1/api/jobs/in/search/1"
-        self._last_latency_ms: Optional[float] = None
-        self._last_error: Optional[str] = None
-        self._results_returned = 0
-        self._last_queried: Optional[datetime] = None
+        self.daily_request_cap = settings.DISCOVERY_DAILY_QUOTA_ADZUNA
 
     @property
     def provider_name(self) -> str:
@@ -25,7 +23,17 @@ class AdzunaAdapter(BaseProvider):
     def display_name(self) -> str:
         return "Adzuna Structured Jobs"
 
+    @property
+    def tier(self) -> int:
+        return 2
+
+    @property
+    def free_tier_info(self) -> str:
+        return "Adzuna Developer Portal (14-day evaluation trial; disabled by default under permanent zero-cost policy)"
+
     def is_configured(self) -> bool:
+        if not getattr(settings, "ENABLE_EVALUATION_PROVIDERS", False):
+            return False
         return bool(self.app_id and self.app_key and len(self.app_key.strip()) > 5)
 
     async def search_jobs(
@@ -33,9 +41,12 @@ class AdzunaAdapter(BaseProvider):
         query: str,
         location: Optional[str] = None,
         remote_only: bool = False,
-        limit: int = 15
+        limit: int = 15,
+        **kwargs
     ) -> List[NormalizedJob]:
-        if not self.is_configured():
+        can_run, reason = self.can_query()
+        if not can_run:
+            self._last_error = reason
             return []
 
         params = {
@@ -51,27 +62,29 @@ class AdzunaAdapter(BaseProvider):
         try:
             async with httpx.AsyncClient(timeout=settings.DISCOVERY_TIMEOUT_SECONDS) as client:
                 res = await client.get(self.endpoint, params=params)
-                self._last_latency_ms = (time.perf_counter() - start_time) * 1000
-                self._last_queried = datetime.now(timezone.utc)
+                latency = (time.perf_counter() - start_time) * 1000
 
                 if res.status_code == 200:
-                    self._last_error = None
                     data = res.json()
+                    results = data.get("results", [])
+                    self.record_query_success(latency, len(results))
                 elif res.status_code in {401, 403}:
                     self._last_error = "Invalid Adzuna app credentials."
+                    self.record_query_error(self._last_error, is_auth_error=True)
                     return []
                 elif res.status_code == 429:
                     self._last_error = "Adzuna API rate limit reached."
+                    self.record_query_error(self._last_error, is_rate_limit=True, cooldown_seconds=settings.DISCOVERY_RATE_LIMIT_COOLDOWN_SECONDS)
                     return []
                 else:
                     self._last_error = f"Adzuna status {res.status_code}"
+                    self.record_query_error(self._last_error)
                     return []
         except Exception as e:
             self._last_error = f"Adzuna network error: {str(e)}"
+            self.record_query_error(self._last_error)
             return []
 
-        results = data.get("results", [])
-        self._results_returned += len(results)
         jobs: List[NormalizedJob] = []
 
         for item in results[:limit]:
@@ -116,14 +129,4 @@ class AdzunaAdapter(BaseProvider):
         return []
 
     def get_health_status(self) -> Dict[str, Any]:
-        return {
-            "provider_name": self.provider_name,
-            "display_name": self.display_name,
-            "is_configured": self.is_configured(),
-            "status": "active" if self.is_configured() and not self._last_error else ("disabled" if not self.is_configured() else "error"),
-            "error_message": self._last_error,
-            "latency_ms": self._last_latency_ms,
-            "results_returned": self._results_returned,
-            "quota_limit_info": "Adzuna Developer Portal Tier",
-            "last_queried": self._last_queried
-        }
+        return super().get_health_status()

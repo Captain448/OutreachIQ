@@ -231,7 +231,9 @@ import {
                 <div class="rank-badge">#{{ act.priority_rank }}</div>
                 <div class="action-title-block">
                   <div class="title-row">
-                    <h3 class="skill-name">{{ act.skill_name }}</h3>
+                    <a [routerLink]="['/learning']" [queryParams]="{ skill: act.skill_name }" class="skill-name-link" title="Open COSGO Execution Plan for {{ act.skill_name }}">
+                      <h3 class="skill-name">{{ act.skill_name }}</h3>
+                    </a>
                     <span class="category-chip">{{ act.category }}</span>
                     <span
                       class="state-chip"
@@ -242,11 +244,20 @@ import {
                   </div>
                   <p class="why-text">{{ act.why_recommended }}</p>
                 </div>
-                <div class="effort-badge-wrap">
-                  <div class="hours-badge">{{ act.estimated_hours }} hrs</div>
-                  <div class="effort-range">
-                    {{ act.effort_uncertainty_range.min_hours }}-{{ act.effort_uncertainty_range.max_hours }} hrs range
+                <div class="action-header-right">
+                  <div class="effort-badge-wrap">
+                    <div class="hours-badge">{{ act.estimated_hours }} hrs</div>
+                    <div class="effort-range">
+                      {{ act.effort_uncertainty_range.min_hours }}-{{ act.effort_uncertainty_range.max_hours }} hrs range
+                    </div>
                   </div>
+                  <a [routerLink]="['/learning']" [queryParams]="{ skill: act.skill_name }" class="btn-execute-skill" title="Open full COSGO execution roadmap and curated learning resources">
+                    <span>Learn & Execute</span>
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                      <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                  </a>
                 </div>
               </div>
 
@@ -868,6 +879,40 @@ import {
       display: flex;
       gap: 16px;
       align-items: flex-start;
+    }
+    .action-header-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .skill-name-link {
+      text-decoration: none;
+      color: inherit;
+    }
+    .skill-name-link:hover .skill-name {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+    .btn-execute-skill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 5px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .btn-execute-skill:hover {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #1d4ed8;
     }
     .rank-badge {
       background: #eff6ff;

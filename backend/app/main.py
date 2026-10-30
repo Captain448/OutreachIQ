@@ -17,6 +17,7 @@ from app.api.routers.providers import router as providers_router
 from app.api.routers.cosgo import router as cosgo_router
 from app.api.routers.outreach import router as outreach_router
 from app.api.routers.gmail import router as gmail_router
+from app.api.routers.learning import router as learning_router
 
 
 @asynccontextmanager
@@ -54,6 +55,7 @@ app.include_router(providers_router, prefix=settings.API_V1_STR)
 app.include_router(cosgo_router, prefix=settings.API_V1_STR)
 app.include_router(outreach_router, prefix=settings.API_V1_STR)
 app.include_router(gmail_router, prefix=settings.API_V1_STR)
+app.include_router(learning_router, prefix=settings.API_V1_STR)
 
 # Also expose without prefix for ease of testing / direct spec compliance
 app.include_router(auth_router)
@@ -65,6 +67,7 @@ app.include_router(providers_router)
 app.include_router(cosgo_router)
 app.include_router(outreach_router)
 app.include_router(gmail_router)
+app.include_router(learning_router)
 
 
 

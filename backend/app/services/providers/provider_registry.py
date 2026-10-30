@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.services.providers.base_provider import BaseProvider, NormalizedJob, NormalizedCompany
 from app.services.providers.tavily_adapter import TavilyAdapter
 from app.services.providers.exa_adapter import ExaAdapter
+from app.services.providers.remotive_adapter import RemotiveAdapter
 from app.services.providers.jsearch_adapter import JSearchAdapter
 from app.services.providers.serpapi_adapter import SerpApiAdapter
 from app.services.providers.adzuna_adapter import AdzunaAdapter
@@ -16,10 +17,11 @@ class ProviderRegistry:
         self._providers: Dict[str, BaseProvider] = {
             "tavily": TavilyAdapter(),
             "exa": ExaAdapter(),
-            "jsearch": JSearchAdapter(),
-            "serpapi": SerpApiAdapter(),
+            "remotive": RemotiveAdapter(),
             "adzuna": AdzunaAdapter(),
             "jooble": JoobleAdapter(),
+            "jsearch": JSearchAdapter(),
+            "serpapi": SerpApiAdapter(),
         }
         # In-memory query cache to prevent repeat API calls & expenses: {cache_key: (timestamp, results)}
         self._jobs_cache: Dict[str, Tuple[float, List[NormalizedJob]]] = {}
@@ -33,6 +35,37 @@ class ProviderRegistry:
 
     def get_configured_providers(self) -> List[BaseProvider]:
         return [p for p in self._providers.values() if p.is_configured()]
+
+    def get_tier1_providers(self) -> List[BaseProvider]:
+        """Returns configured Tier 1 providers ordered by DISCOVERY_TIER1_PROVIDERS config."""
+        configured = self.get_configured_providers()
+        ordered = []
+        for name in settings.DISCOVERY_TIER1_PROVIDERS:
+            for p in configured:
+                if getattr(p, "provider_name", None) == name and p not in ordered:
+                    ordered.append(p)
+        for p in configured:
+            tier_val = getattr(p, "tier", 1)
+            if (tier_val == 1 or not isinstance(tier_val, int)) and p not in ordered and getattr(p, "provider_name", None) not in settings.DISCOVERY_TIER2_PROVIDERS:
+                ordered.append(p)
+        return ordered
+
+    def get_tier2_providers(self) -> List[BaseProvider]:
+        """Returns configured Tier 2 providers ordered by DISCOVERY_TIER2_PROVIDERS config."""
+        configured = self.get_configured_providers()
+        ordered = []
+        for name in settings.DISCOVERY_TIER2_PROVIDERS:
+            for p in configured:
+                if getattr(p, "provider_name", None) == name and p not in ordered:
+                    ordered.append(p)
+        for p in configured:
+            if getattr(p, "tier", None) == 2 and p not in ordered:
+                ordered.append(p)
+        return ordered
+
+    def clear_cache(self) -> None:
+        self._jobs_cache.clear()
+        self._companies_cache.clear()
 
     def get_all_health_statuses(self) -> List[Dict[str, Any]]:
         return [p.get_health_status() for p in self._providers.values()]

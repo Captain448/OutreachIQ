@@ -15,9 +15,11 @@ from app.models.gmail import (
     EmailMessageStatus,
     SendingMode
 )
+from app.models.learning import UserLearningPlan
 
 __all__ = [
     "User",
+    "UserLearningPlan",
     "Profile",
     "Preferences",
     "Education",

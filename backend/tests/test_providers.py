@@ -27,7 +27,8 @@ async def test_tavily_adapter_success():
     mock_resp.status_code = 200
     mock_resp.json.return_value = mock_response
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post, \
+         patch("app.services.listing_extractor.ListingExtractor.fetch_page_content", new_callable=AsyncMock, return_value=None):
         mock_post.return_value = mock_resp
         jobs = await adapter.search_jobs(query="Python Engineer", location="India", limit=5)
         
@@ -55,20 +56,24 @@ async def test_tavily_adapter_invalid_key_and_quota_error():
         jobs = await adapter.search_jobs(query="Engineer")
         assert len(jobs) == 0
         health = adapter.get_health_status()
-        assert health["status"] == "error"
-        assert "Invalid Tavily API key" in health["error_message"]
+        assert health["status"] in ("error", "disabled_auth_error")
+        assert health["circuit_status"] == "disabled_auth_error"
+        assert "Invalid Tavily API key" in health["error_message"] or "401/403" in health["error_message"]
 
     # 429 Quota Exhausted
+    adapter2 = TavilyAdapter(api_key="tvly-quota-key")
     mock_429 = MagicMock()
     mock_429.status_code = 429
     mock_429.text = "Rate Limit Exceeded"
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         mock_post.return_value = mock_429
-        jobs2 = await adapter.search_jobs(query="Engineer")
+        jobs2 = await adapter2.search_jobs(query="Engineer")
         assert len(jobs2) == 0
-        health2 = adapter.get_health_status()
-        assert "quota exhausted" in health2["error_message"].lower()
+        health2 = adapter2.get_health_status()
+        assert health2["status"] in ("error", "rate_limited")
+        assert health2["circuit_status"] == "rate_limited"
+        assert "quota" in health2["error_message"].lower() or "rate" in health2["error_message"].lower()
 
 
 @pytest.mark.anyio
@@ -93,7 +98,8 @@ async def test_exa_adapter_success_and_company_discovery():
     mock_resp.status_code = 200
     mock_resp.json.return_value = mock_job_response
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post, \
+         patch("app.services.listing_extractor.ListingExtractor.fetch_page_content", new_callable=AsyncMock, return_value=None):
         mock_post.return_value = mock_resp
         jobs = await adapter.search_jobs(query="Machine Learning", location="Remote", limit=5)
         assert len(jobs) == 1

@@ -46,6 +46,12 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    path: 'learning',
+    loadComponent: () =>
+      import('./features/learning/learning.component').then((m) => m.LearningComponent),
+    canActivate: [authGuard]
+  },
+  {
     path: 'outreach',
     loadComponent: () =>
       import('./features/outreach/outreach.component').then((m) => m.OutreachComponent),

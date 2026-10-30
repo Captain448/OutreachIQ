@@ -9,13 +9,11 @@ from app.services.providers.base_provider import BaseProvider, NormalizedJob, No
 
 
 class JSearchAdapter(BaseProvider):
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
         self.api_key = api_key or settings.JSEARCH_API_KEY
         self.endpoint = "https://jsearch.p.rapidapi.com/search"
-        self._last_latency_ms: Optional[float] = None
-        self._last_error: Optional[str] = None
-        self._results_returned = 0
-        self._last_queried: Optional[datetime] = None
+        self.daily_request_cap = settings.DISCOVERY_DAILY_QUOTA_JSEARCH
 
     @property
     def provider_name(self) -> str:
@@ -25,6 +23,14 @@ class JSearchAdapter(BaseProvider):
     def display_name(self) -> str:
         return "JSearch (Aggregated Job Feeds)"
 
+    @property
+    def tier(self) -> int:
+        return 2
+
+    @property
+    def free_tier_info(self) -> str:
+        return "RapidAPI JSearch Basic Free Tier (~50 requests/mo, 10/day safe limit)"
+
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key.strip()) > 5)
 
@@ -33,9 +39,12 @@ class JSearchAdapter(BaseProvider):
         query: str,
         location: Optional[str] = None,
         remote_only: bool = False,
-        limit: int = 15
+        limit: int = 15,
+        **kwargs
     ) -> List[NormalizedJob]:
-        if not self.is_configured():
+        can_run, reason = self.can_query()
+        if not can_run:
+            self._last_error = reason
             return []
 
         search_query = f"{query} in {location}" if location else f"{query} in India"
@@ -56,24 +65,29 @@ class JSearchAdapter(BaseProvider):
         try:
             async with httpx.AsyncClient(timeout=settings.DISCOVERY_TIMEOUT_SECONDS) as client:
                 res = await client.get(self.endpoint, headers=headers, params=params)
-                self._last_latency_ms = (time.perf_counter() - start_time) * 1000
-                self._last_queried = datetime.now(timezone.utc)
+                latency = (time.perf_counter() - start_time) * 1000
 
                 if res.status_code == 200:
-                    self._last_error = None
                     data = res.json()
+                    data_list = data.get("data", [])
+                    self.record_query_success(latency, len(data_list))
+                elif res.status_code in {401, 403}:
+                    self._last_error = "Invalid RapidAPI JSearch key."
+                    self.record_query_error(self._last_error, is_auth_error=True)
+                    return []
                 elif res.status_code == 429:
                     self._last_error = "JSearch RapidAPI quota limit reached."
+                    self.record_query_error(self._last_error, is_rate_limit=True, cooldown_seconds=settings.DISCOVERY_RATE_LIMIT_COOLDOWN_SECONDS)
                     return []
                 else:
                     self._last_error = f"JSearch error status {res.status_code}"
+                    self.record_query_error(self._last_error)
                     return []
         except Exception as e:
             self._last_error = f"JSearch request error: {str(e)}"
+            self.record_query_error(self._last_error)
             return []
 
-        data_list = data.get("data", [])
-        self._results_returned += len(data_list)
         jobs: List[NormalizedJob] = []
 
         for item in data_list[:limit]:
@@ -121,14 +135,4 @@ class JSearchAdapter(BaseProvider):
         return []
 
     def get_health_status(self) -> Dict[str, Any]:
-        return {
-            "provider_name": self.provider_name,
-            "display_name": self.display_name,
-            "is_configured": self.is_configured(),
-            "status": "active" if self.is_configured() and not self._last_error else ("disabled" if not self.is_configured() else "error"),
-            "error_message": self._last_error,
-            "latency_ms": self._last_latency_ms,
-            "results_returned": self._results_returned,
-            "quota_limit_info": "RapidAPI JSearch Quota",
-            "last_queried": self._last_queried
-        }
+        return super().get_health_status()

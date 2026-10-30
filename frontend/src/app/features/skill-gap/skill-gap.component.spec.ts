@@ -276,4 +276,16 @@ describe('SkillGapComponent', () => {
 
     expect(component.latestRun?.eligible_opportunities_count).toBe(0);
   });
+
+  it('should render navigation links to /learning for recommended skills', () => {
+    fixture.detectChanges();
+    const compiled = fixture.nativeElement as HTMLElement;
+    const executeButtons = compiled.querySelectorAll('.btn-execute-skill');
+    expect(executeButtons.length).toBe(2);
+    expect(executeButtons[0].textContent).toContain('Learn & Execute');
+
+    const skillLinks = compiled.querySelectorAll('.skill-name-link');
+    expect(skillLinks.length).toBe(2);
+    expect(skillLinks[0].textContent).toContain('PyTorch');
+  });
 });

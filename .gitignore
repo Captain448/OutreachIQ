@@ -88,6 +88,8 @@ uploads/
 *.log
 logs/
 backend/logs/
+data/
+backend/data/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

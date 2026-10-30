@@ -8,13 +8,11 @@ from app.services.providers.base_provider import BaseProvider, NormalizedJob, No
 
 
 class SerpApiAdapter(BaseProvider):
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
         self.api_key = api_key or settings.SERPAPI_API_KEY
         self.endpoint = "https://serpapi.com/search.json"
-        self._last_latency_ms: Optional[float] = None
-        self._last_error: Optional[str] = None
-        self._results_returned = 0
-        self._last_queried: Optional[datetime] = None
+        self.daily_request_cap = settings.DISCOVERY_DAILY_QUOTA_SERPAPI
 
     @property
     def provider_name(self) -> str:
@@ -24,6 +22,14 @@ class SerpApiAdapter(BaseProvider):
     def display_name(self) -> str:
         return "SerpApi (Google Jobs)"
 
+    @property
+    def tier(self) -> int:
+        return 2
+
+    @property
+    def free_tier_info(self) -> str:
+        return "SerpApi Free Plan (100 searches/mo, 10/day safe limit)"
+
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key.strip()) > 5)
 
@@ -32,9 +38,12 @@ class SerpApiAdapter(BaseProvider):
         query: str,
         location: Optional[str] = None,
         remote_only: bool = False,
-        limit: int = 15
+        limit: int = 15,
+        **kwargs
     ) -> List[NormalizedJob]:
-        if not self.is_configured():
+        can_run, reason = self.can_query()
+        if not can_run:
+            self._last_error = reason
             return []
 
         search_query = query
@@ -54,24 +63,29 @@ class SerpApiAdapter(BaseProvider):
         try:
             async with httpx.AsyncClient(timeout=settings.DISCOVERY_TIMEOUT_SECONDS) as client:
                 res = await client.get(self.endpoint, params=params)
-                self._last_latency_ms = (time.perf_counter() - start_time) * 1000
-                self._last_queried = datetime.now(timezone.utc)
+                latency = (time.perf_counter() - start_time) * 1000
 
                 if res.status_code == 200:
-                    self._last_error = None
                     data = res.json()
+                    jobs_results = data.get("jobs_results", [])
+                    self.record_query_success(latency, len(jobs_results))
+                elif res.status_code in {401, 403}:
+                    self._last_error = "Invalid SerpApi key."
+                    self.record_query_error(self._last_error, is_auth_error=True)
+                    return []
                 elif res.status_code == 429:
                     self._last_error = "SerpApi monthly search credits exhausted."
+                    self.record_query_error(self._last_error, is_rate_limit=True, cooldown_seconds=settings.DISCOVERY_RATE_LIMIT_COOLDOWN_SECONDS)
                     return []
                 else:
                     self._last_error = f"SerpApi returned status {res.status_code}"
+                    self.record_query_error(self._last_error)
                     return []
         except Exception as e:
             self._last_error = f"SerpApi network error: {str(e)}"
+            self.record_query_error(self._last_error)
             return []
 
-        jobs_results = data.get("jobs_results", [])
-        self._results_returned += len(jobs_results)
         jobs: List[NormalizedJob] = []
 
         for item in jobs_results[:limit]:
@@ -118,14 +132,4 @@ class SerpApiAdapter(BaseProvider):
         return []
 
     def get_health_status(self) -> Dict[str, Any]:
-        return {
-            "provider_name": self.provider_name,
-            "display_name": self.display_name,
-            "is_configured": self.is_configured(),
-            "status": "active" if self.is_configured() and not self._last_error else ("disabled" if not self.is_configured() else "error"),
-            "error_message": self._last_error,
-            "latency_ms": self._last_latency_ms,
-            "results_returned": self._results_returned,
-            "quota_limit_info": "SerpApi Account Credits",
-            "last_queried": self._last_queried
-        }
+        return super().get_health_status()

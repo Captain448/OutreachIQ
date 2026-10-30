@@ -109,6 +109,53 @@ class CompanyResearchService:
                 "prioritize higher-signal emerging opportunities first."
             )
 
+        # Structure confirmed facts vs inferred signals
+        confirmed_facts: List[Dict[str, Any]] = []
+        if company.website_url or company.domain:
+            confirmed_facts.append({
+                "fact_type": "official_presence",
+                "headline": f"Official digital domain: {company.domain or company.website_url}",
+                "source_url": company.website_url or company.source_url,
+                "confidence": 1.0,
+                "is_verified": True
+            })
+        if has_advertised_jobs:
+            confirmed_facts.append({
+                "fact_type": "verified_vacancy",
+                "headline": f"Active verified opening advertised by {company.name}.",
+                "source_url": company.source_url,
+                "confidence": 0.95,
+                "is_verified": True
+            })
+        if company.headquarters and company.headquarters not in ("India", "Remote"):
+            confirmed_facts.append({
+                "fact_type": "official_headquarters",
+                "headline": f"Documented primary location: {company.headquarters}.",
+                "source_url": company.source_url,
+                "confidence": 0.90,
+                "is_verified": True
+            })
+
+        inferred_signals: List[Dict[str, Any]] = []
+        for s in company.signals:
+            inferred_signals.append({
+                "signal_type": s.signal_type,
+                "headline": s.headline,
+                "evidence_url": s.evidence_url or company.source_url,
+                "excerpt": s.excerpt,
+                "confidence": s.confidence,
+                "inference_type": "public_web_signal"
+            })
+        if skill_matches:
+            inferred_signals.append({
+                "signal_type": "tech_stack_alignment",
+                "headline": f"Competency overlap: {', '.join(skill_matches[:4])}",
+                "evidence_url": company.source_url,
+                "excerpt": f"Profile technical alignment match: {', '.join(skill_matches)}",
+                "confidence": 0.85,
+                "inference_type": "profile_matching"
+            })
+
         summary = (
             f"Evaluated {len(company.signals)} public signal(s). "
             f"Opportunity classified as {opp_type.value} with growth signal score {growth_score:.2f} "
@@ -122,7 +169,9 @@ class CompanyResearchService:
             "signals_summary": summary,
             "why_contact": why_contact,
             "why_wait": why_wait,
-            "matched_skills": skill_matches
+            "matched_skills": skill_matches,
+            "confirmed_facts": confirmed_facts,
+            "inferred_signals": inferred_signals
         }
 
     @classmethod

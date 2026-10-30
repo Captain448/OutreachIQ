@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     TAVILY_API_KEY: Optional[str] = None
     EXA_API_KEY: Optional[str] = None
     
+    # Educational & Learning Video Providers (Phase 3)
+    YOUTUBE_API_KEY: Optional[str] = None
+    YOUTUBE_DAILY_QUOTA: int = 25  # YouTube Data API free allowance is 10,000 units/day (search = 100 units -> safe 25 calls/day = 2,500 units)
+    
     # Multi-Provider Job Discovery Integrations (Independently Configurable)
     JSEARCH_API_KEY: Optional[str] = None    # RapidAPI JSearch
     SERPAPI_API_KEY: Optional[str] = None    # SerpApi Google Jobs
@@ -63,6 +67,22 @@ class Settings(BaseSettings):
     DISCOVERY_CACHE_TTL_SECONDS: int = 3600
     DISCOVERY_DEFAULT_LIMIT: int = 20
     DISCOVERY_MAX_LIMIT: int = 50
+
+    # Two-Tier Provider Architecture & Quality Thresholds
+    DISCOVERY_TIER1_PROVIDERS: List[str] = ["tavily", "exa"]
+    DISCOVERY_TIER2_PROVIDERS: List[str] = ["remotive", "jsearch", "serpapi"]
+    DISCOVERY_MIN_RELEVANT_RESULTS: int = 5
+    DISCOVERY_RATE_LIMIT_COOLDOWN_SECONDS: int = 60
+    ENABLE_EVALUATION_PROVIDERS: bool = False  # Disabled by default under permanent zero-cost policy (disables 14-day trials or limited sandboxes)
+
+    # Daily Free-Tier Safety Caps (Local quota enforcement preventing overage charges or exhaustion)
+    DISCOVERY_DAILY_QUOTA_TAVILY: int = 50       # 1,000 queries/month free -> ~50/day safe cap
+    DISCOVERY_DAILY_QUOTA_EXA: int = 50          # 1,000 queries/month free -> ~50/day safe cap
+    DISCOVERY_DAILY_QUOTA_REMOTIVE: int = 100    # Permanent free public feed (no API key needed)
+    DISCOVERY_DAILY_QUOTA_ADZUNA: int = 100      # 250-500 requests/day developer plan
+    DISCOVERY_DAILY_QUOTA_JOOBLE: int = 100      # 500 requests/day partner plan
+    DISCOVERY_DAILY_QUOTA_JSEARCH: int = 10      # 50 requests/month basic plan on RapidAPI (Strict Cap!)
+    DISCOVERY_DAILY_QUOTA_SERPAPI: int = 10      # 100 requests/month free plan
     
     # Heuristic Matching Thresholds (Configurable)
     MATCH_CONTACT_NOW_THRESHOLD: float = 0.70

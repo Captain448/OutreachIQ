@@ -32,6 +32,7 @@ class User(Base):
     outreach_messages = relationship("OutreachEmailMessage", back_populates="user", cascade="all, delete-orphan")
     outreach_replies = relationship("OutreachEmailReply", back_populates="user", cascade="all, delete-orphan")
     outreach_automation_settings = relationship("OutreachAutomationSettings", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    learning_plan = relationship("UserLearningPlan", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email}>"

@@ -18,13 +18,11 @@ COMMON_SKILLS = {
 
 
 class TavilyAdapter(BaseProvider):
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, **kwargs):
+        super().__init__(**kwargs)
         self.api_key = api_key or settings.TAVILY_API_KEY
         self.endpoint = "https://api.tavily.com/search"
-        self._last_latency_ms: Optional[float] = None
-        self._last_error: Optional[str] = None
-        self._results_returned = 0
-        self._last_queried: Optional[datetime] = None
+        self.daily_request_cap = settings.DISCOVERY_DAILY_QUOTA_TAVILY
 
     @property
     def provider_name(self) -> str:
@@ -34,12 +32,22 @@ class TavilyAdapter(BaseProvider):
     def display_name(self) -> str:
         return "Tavily Web Search"
 
+    @property
+    def tier(self) -> int:
+        return 1
+
+    @property
+    def free_tier_info(self) -> str:
+        return "Developer Free Tier (1,000 searches/mo, ~50/day safe limit)"
+
     def is_configured(self) -> bool:
         return bool(self.api_key and len(self.api_key.strip()) > 5)
 
     async def _post_tavily(self, query: str, max_results: int = 10, search_depth: str = "basic") -> Dict[str, Any]:
-        if not self.is_configured():
-            raise ValueError("Tavily API key is not configured.")
+        can_run, reason = self.can_query()
+        if not can_run:
+            self._last_error = reason
+            raise ValueError(reason)
 
         payload = {
             "api_key": self.api_key,
@@ -57,17 +65,19 @@ class TavilyAdapter(BaseProvider):
             try:
                 async with httpx.AsyncClient(timeout=settings.DISCOVERY_TIMEOUT_SECONDS) as client:
                     response = await client.post(self.endpoint, json=payload)
-                    self._last_latency_ms = (time.perf_counter() - start_time) * 1000
-                    self._last_queried = datetime.now(timezone.utc)
+                    latency = (time.perf_counter() - start_time) * 1000
 
                     if response.status_code == 200:
-                        self._last_error = None
-                        return response.json()
+                        data = response.json()
+                        self.record_query_success(latency, len(data.get("results", [])))
+                        return data
                     elif response.status_code == 401:
                         self._last_error = "Invalid Tavily API key provided."
+                        self.record_query_error(self._last_error, is_auth_error=True)
                         raise ValueError(self._last_error)
                     elif response.status_code == 429:
                         self._last_error = "Tavily rate limit or search quota exhausted."
+                        self.record_query_error(self._last_error, is_rate_limit=True, cooldown_seconds=settings.DISCOVERY_RATE_LIMIT_COOLDOWN_SECONDS)
                         raise ValueError(self._last_error)
                     elif response.status_code >= 500:
                         if attempt < retries:
@@ -75,9 +85,11 @@ class TavilyAdapter(BaseProvider):
                             delay *= 2
                             continue
                         self._last_error = f"Tavily server error HTTP {response.status_code}"
+                        self.record_query_error(self._last_error)
                         raise RuntimeError(self._last_error)
                     else:
                         self._last_error = f"Tavily API returned status {response.status_code}: {response.text[:200]}"
+                        self.record_query_error(self._last_error)
                         raise RuntimeError(self._last_error)
             except httpx.TimeoutException:
                 if attempt < retries:
@@ -85,11 +97,14 @@ class TavilyAdapter(BaseProvider):
                     delay *= 2
                     continue
                 self._last_error = "Tavily request timed out."
+                self.record_query_error(self._last_error)
                 raise TimeoutError(self._last_error)
             except httpx.RequestError as e:
                 self._last_error = f"Tavily network error: {str(e)}"
+                self.record_query_error(self._last_error)
                 raise RuntimeError(self._last_error)
 
+        self.record_query_error(self._last_error or "Tavily request failed after retries.")
         raise RuntimeError(self._last_error or "Tavily request failed after retries.")
 
     async def search_jobs(
@@ -252,27 +267,7 @@ class TavilyAdapter(BaseProvider):
         return companies
 
     def get_health_status(self) -> Dict[str, Any]:
-        if not self.is_configured():
-            status = "disabled"
-            err = "API key not configured in environment (TAVILY_API_KEY)"
-        elif self._last_error:
-            status = "error"
-            err = self._last_error
-        else:
-            status = "active"
-            err = None
-
-        return {
-            "provider_name": self.provider_name,
-            "display_name": self.display_name,
-            "is_configured": self.is_configured(),
-            "status": status,
-            "error_message": err,
-            "latency_ms": self._last_latency_ms,
-            "results_returned": self._results_returned,
-            "quota_limit_info": "Standard Tavily Search Tier",
-            "last_queried": self._last_queried
-        }
+        return super().get_health_status()
 
     @staticmethod
     def _extract_company_name(title: str, url: str) -> str:

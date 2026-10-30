@@ -1,7 +1,7 @@
 import time
 import asyncio
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -94,20 +94,19 @@ class OpportunityOrchestrator:
             opp_type_filter = request_params.get("opportunity_type")
             limit = request_params.get("limit") or settings.DISCOVERY_DEFAULT_LIMIT
 
-            # 2. Inspect Configured Providers
-            configured_providers = provider_registry.get_configured_providers()
-            providers_queried: List[str] = [p.provider_name for p in configured_providers]
+            # 2. Two-Tier Provider Architecture Setup
+            tier1_providers = provider_registry.get_tier1_providers()
+            tier2_providers = provider_registry.get_tier2_providers()
+
+            providers_queried: List[str] = []
             providers_succeeded: List[str] = []
             providers_failed: List[Dict[str, Any]] = []
-
-            run.providers_queried = providers_queried
-            db.commit()
+            provider_metrics: Dict[str, Any] = {}
 
             discovered_jobs: List[NormalizedJob] = []
             discovered_companies: List[NormalizedCompany] = []
 
-            # 3. Concurrent Multi-Source Querying
-            # Construct focused role query incorporating relevant variants
+            # 3. Query Construction
             primary_role = target_roles[0].strip() if target_roles else "Software Engineer"
             role_terms = primary_role
             if "aiml" in primary_role.lower() or "ai/ml" in primary_role.lower():
@@ -116,7 +115,6 @@ class OpportunityOrchestrator:
             top_skills = " ".join(skills[:2]) if skills else ""
             job_query = f"{role_terms} {top_skills}".strip()
             
-            # Clean and normalize target locations (up to 4 locations searched with bounded concurrency)
             cleaned_locations: List[str] = []
             if locations:
                 for l in locations:
@@ -133,34 +131,59 @@ class OpportunityOrchestrator:
 
             sem = asyncio.Semaphore(4)
 
-            async def query_provider_jobs_for_loc(p, target_loc: str):
-                async with sem:
-                    try:
-                        jobs = await p.search_jobs(
-                            query=job_query,
-                            location=target_loc,
-                            remote_only=is_remote_only,
-                            limit=per_loc_limit,
-                            skills=skills,
-                            target_roles=target_roles,
-                            experience_level=experience_level
-                        )
-                        return p.provider_name, "jobs", jobs, None
-                    except TypeError:
-                        try:
-                            jobs = await p.search_jobs(
-                                query=job_query,
-                                location=target_loc,
-                                remote_only=is_remote_only,
-                                limit=per_loc_limit
-                            )
-                            return p.provider_name, "jobs", jobs, None
-                        except Exception as e:
-                            return p.provider_name, "jobs", [], str(e)
-                    except Exception as e:
-                        return p.provider_name, "jobs", [], str(e)
+            async def _check_can_query(p) -> Tuple[bool, Optional[str]]:
+                can_query_fn = getattr(p, "can_query", None)
+                if not callable(can_query_fn):
+                    return True, None
+                try:
+                    check = can_query_fn()
+                    if asyncio.iscoroutine(check):
+                        check = await check
+                    if isinstance(check, tuple):
+                        return check
+                    return bool(check), None
+                except Exception:
+                    return True, None
 
-            async def query_provider_companies(p):
+            async def query_provider_safe(p) -> Tuple[str, int, List[NormalizedJob], List[NormalizedCompany], Optional[str], float]:
+                p_name = getattr(p, "provider_name", "unknown")
+                p_tier = getattr(p, "tier", 1)
+                if not isinstance(p_tier, int):
+                    p_tier = 1
+
+                can_run, reason = await _check_can_query(p)
+                if not can_run:
+                    return p_name, p_tier, [], [], reason, 0.0
+
+                start_p = time.perf_counter()
+                p_jobs: List[NormalizedJob] = []
+                p_comps: List[NormalizedCompany] = []
+                err_msg = None
+
+                for target_loc in target_locations_to_query:
+                    try:
+                        async with sem:
+                            try:
+                                loc_jobs = await p.search_jobs(
+                                    query=job_query,
+                                    location=target_loc,
+                                    remote_only=is_remote_only,
+                                    limit=per_loc_limit,
+                                    skills=skills,
+                                    target_roles=target_roles,
+                                    experience_level=experience_level
+                                )
+                            except TypeError:
+                                loc_jobs = await p.search_jobs(
+                                    query=job_query,
+                                    location=target_loc,
+                                    remote_only=is_remote_only,
+                                    limit=per_loc_limit
+                                )
+                            p_jobs.extend(loc_jobs)
+                    except Exception as e:
+                        err_msg = str(e)
+
                 try:
                     comps = await p.search_companies(
                         skills=skills,
@@ -169,33 +192,128 @@ class OpportunityOrchestrator:
                         locations=cleaned_locations,
                         limit=min(limit, 10)
                     )
-                    return p.provider_name, "companies", comps, None
+                    p_comps.extend(comps)
                 except Exception as e:
-                    return p.provider_name, "companies", [], str(e)
+                    if not err_msg:
+                        err_msg = str(e)
 
-            tasks = []
-            for p in configured_providers:
-                for target_loc in target_locations_to_query:
-                    tasks.append(query_provider_jobs_for_loc(p, target_loc))
-                tasks.append(query_provider_companies(p))
+                p_latency = (time.perf_counter() - start_p) * 1000
+                return p_name, p_tier, p_jobs, p_comps, err_msg, p_latency
 
-            if tasks:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                for res in results:
-                    if isinstance(res, tuple):
-                        p_name, kind, data, err = res
-                        if err:
-                            providers_failed.append({"provider": p_name, "type": kind, "error": err})
-                        else:
-                            if p_name not in providers_succeeded:
-                                providers_succeeded.append(p_name)
-                            if kind == "jobs":
-                                discovered_jobs.extend(data)
-                            elif kind == "companies":
-                                discovered_companies.extend(data)
+            # Stage 1: Primary Discovery Tier (Tavily, Exa)
+            tier1_jobs: List[NormalizedJob] = []
+            tier1_comps: List[NormalizedCompany] = []
+            tier1_names: List[str] = []
+
+            for p in tier1_providers:
+                can_run, reason = await _check_can_query(p)
+                p_name = getattr(p, "provider_name", "unknown")
+                if not can_run:
+                    provider_metrics[p_name] = {
+                        "tier": 1,
+                        "status": "skipped",
+                        "reason": reason,
+                        "results_count": 0,
+                        "latency_ms": 0.0
+                    }
+                    continue
+
+                tier1_names.append(p_name)
+                providers_queried.append(p_name)
+                p_name, tier, jobs, comps, err, latency = await query_provider_safe(p)
+                p_count = len(jobs) + len(comps)
+
+                provider_metrics[p_name] = {
+                    "tier": tier,
+                    "status": "error" if err and p_count == 0 else "success",
+                    "latency_ms": round(latency, 2),
+                    "results_count": p_count,
+                    "error": err
+                }
+
+                if err and p_count == 0:
+                    providers_failed.append({"provider": p_name, "tier": 1, "error": err})
+                else:
+                    if p_name not in providers_succeeded:
+                        providers_succeeded.append(p_name)
+                    tier1_jobs.extend(jobs)
+                    tier1_comps.extend(comps)
+
+            discovered_jobs.extend(tier1_jobs)
+            discovered_companies.extend(tier1_comps)
+            tier1_results_count = len(tier1_jobs) + len(tier1_comps)
+
+            # Stage 2: Evaluate Fallback Trigger
+            # Secondary tier is queried ONLY if Tier 1 fails, times out, rate limits, or returns fewer than DISCOVERY_MIN_RELEVANT_RESULTS
+            min_required = settings.DISCOVERY_MIN_RELEVANT_RESULTS
+            fallback_triggered = False
+            fallback_reason: Optional[str] = None
+
+            if len(tier1_providers) == 0:
+                fallback_triggered = True
+                fallback_reason = "No primary Tier 1 providers configured in environment."
+            elif len(tier1_names) == 0:
+                fallback_triggered = True
+                fallback_reason = "All primary Tier 1 providers are currently unavailable or quota-limited."
+            elif tier1_results_count < min_required:
+                fallback_triggered = True
+                fallback_reason = (
+                    f"Tier 1 primary providers returned {tier1_results_count} candidate results, "
+                    f"which is fewer than the minimum threshold of {min_required}."
+                )
+            elif len(providers_failed) > 0 and len(providers_succeeded) == 0:
+                fallback_triggered = True
+                fallback_reason = "All queried Tier 1 primary providers experienced errors."
+            else:
+                fallback_triggered = False
+                fallback_reason = f"Tier 1 returned {tier1_results_count} relevant results (>= {min_required}); Tier 2 skipped to conserve free quotas."
+
+            tier2_names: List[str] = []
+            tier2_results_count = 0
+
+            # Stage 3: Secondary Discovery Tier (Eligible providers in priority order)
+            if fallback_triggered:
+                for p in tier2_providers:
+                    can_run, reason = await _check_can_query(p)
+                    p_name = getattr(p, "provider_name", "unknown")
+                    if not can_run:
+                        provider_metrics[p_name] = {
+                            "tier": 2,
+                            "status": "skipped",
+                            "reason": reason,
+                            "results_count": 0,
+                            "latency_ms": 0.0
+                        }
+                        continue
+
+                    tier2_names.append(p_name)
+                    if p.provider_name not in providers_queried:
+                        providers_queried.append(p.provider_name)
+
+                    p_name, tier, jobs, comps, err, latency = await query_provider_safe(p)
+                    p_count = len(jobs) + len(comps)
+
+                    provider_metrics[p_name] = {
+                        "tier": tier,
+                        "status": "error" if err and p_count == 0 else "success",
+                        "latency_ms": round(latency, 2),
+                        "results_count": p_count,
+                        "error": err
+                    }
+
+                    if err and p_count == 0:
+                        providers_failed.append({"provider": p_name, "tier": 2, "error": err})
+                    else:
+                        if p_name not in providers_succeeded:
+                            providers_succeeded.append(p_name)
+                        discovered_jobs.extend(jobs)
+                        discovered_companies.extend(comps)
+                        tier2_results_count += p_count
 
             total_discovered = len(discovered_jobs) + len(discovered_companies)
+            run.providers_queried = providers_queried
             run.results_discovered_count = total_discovered
+            db.commit()
 
             # 4. Deduplication & Quality Filtering Gate
             deduped_jobs = OpportunityDeduplicator.deduplicate_jobs(discovered_jobs)
@@ -548,6 +666,33 @@ class OpportunityOrchestrator:
                     )
                     db.add(evidence_record)
 
+                    # Explicitly ground verified facts
+                    for fact in evaluation.get("confirmed_facts", []):
+                        db.add(Evidence(
+                            opportunity_id=opp.id,
+                            company_id=company.id,
+                            job_id=None,
+                            source_id=source_record.id,
+                            claim_type=ClaimType.OBSERVED_FACT,
+                            claim_text=fact.get("headline", ""),
+                            source_url=fact.get("source_url") or comp_item.source_url,
+                            confidence=fact.get("confidence", 1.0)
+                        ))
+
+                    # Explicitly ground inferred signals
+                    for sig in evaluation.get("inferred_signals", []):
+                        db.add(Evidence(
+                            opportunity_id=opp.id,
+                            company_id=company.id,
+                            job_id=None,
+                            source_id=source_record.id,
+                            claim_type=ClaimType.SYSTEM_INFERENCE,
+                            claim_text=sig.get("headline", ""),
+                            source_url=sig.get("evidence_url") or comp_item.source_url,
+                            supporting_excerpt=sig.get("excerpt"),
+                            confidence=sig.get("confidence", 0.85)
+                        ))
+
             # 6. Finalize Run Status with Honest Accounting
             run.opportunities_created_count = created_count
             run.providers_succeeded = providers_succeeded
@@ -557,6 +702,13 @@ class OpportunityOrchestrator:
                 "providers_queried": providers_queried,
                 "providers_succeeded": providers_succeeded,
                 "providers_failed": providers_failed,
+                "tier1_providers_evaluated": tier1_names,
+                "tier1_results_count": tier1_results_count,
+                "fallback_triggered": fallback_triggered,
+                "fallback_reason": fallback_reason,
+                "tier2_providers_evaluated": tier2_names,
+                "tier2_results_count": tier2_results_count,
+                "provider_metrics": provider_metrics,
                 "total_candidates_discovered": total_discovered,
                 "total_candidates_deduplicated": total_deduped,
                 "opportunities_created_count": created_count,
@@ -567,12 +719,12 @@ class OpportunityOrchestrator:
                 "execution_time_seconds": run.execution_time_seconds
             }
 
-            if len(configured_providers) == 0:
+            if len(providers_queried) == 0:
                 run.status = RunStatus.FAILED
-                run.error_summary = "No live external search providers configured (TAVILY_API_KEY / EXA_API_KEY). Please configure an API key to discover live web openings."
+                run.error_summary = "No search providers eligible or configured in environment."
             elif len(providers_failed) > 0 and len(providers_succeeded) == 0:
                 run.status = RunStatus.FAILED
-                run.error_summary = f"All {len(providers_failed)} configured provider(s) failed during search."
+                run.error_summary = f"All {len(providers_failed)} queried provider(s) failed during search."
             elif len(providers_failed) > 0 and len(providers_succeeded) > 0:
                 run.status = RunStatus.PARTIAL
                 run.error_summary = f"Partial discovery: {len(providers_succeeded)} provider(s) succeeded; {len(providers_failed)} failed."
